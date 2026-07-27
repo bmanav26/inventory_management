@@ -538,7 +538,3 @@ DELETE /api/products/{id} # delete
 - POST → 201 CREATED with the created resource in body
 - DELETE → 204 NO CONTENT with empty body
 - Errors → consistent JSON with status, message, timestamp
-
----
-
-_This file will be updated as new concepts are introduced — especially @Transactional, Redis caching, and pagination._
