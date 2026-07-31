@@ -99,11 +99,12 @@ docker compose up -d
 | PUT    | /api/customers/{id} | Update customer    |
 | DELETE | /api/customers/{id} | Delete customer    |
 
-### Orders (coming soon)
+### Orders
 
-| Method | Endpoint                | Description     |
-| ------ | ----------------------- | --------------- |
-| POST   | /api/orders             | Place an order  |
-| GET    | /api/orders             | Get all orders  |
-| GET    | /api/orders/{id}        | Get order by ID |
-| PATCH  | /api/orders/{id}/cancel | Cancel an order |
+| Method | Endpoint                          | Description            |
+| ------ | --------------------------------- | ---------------------- |
+| POST   | /api/orders                       | Place an order         |
+| GET    | /api/orders                       | Get all orders         |
+| GET    | /api/orders/{id}                  | Get order by ID        |
+| PATCH  | /api/orders/{id}/cancel           | Cancel an order        |
+| GET    | /api/orders/customer/{customerId} | Get orders by customer |

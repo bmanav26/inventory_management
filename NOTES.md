@@ -513,8 +513,6 @@ Add global exception handler
 
 One line, imperative tense, describes what the commit does.
 
----
-
 ## 12. API Design Conventions (REST)
 
 ### URL naming:
@@ -538,3 +536,144 @@ DELETE /api/products/{id} # delete
 - POST → 201 CREATED with the created resource in body
 - DELETE → 204 NO CONTENT with empty body
 - Errors → consistent JSON with status, message, timestamp
+
+---
+
+## 13. Transactions & @Transactional
+
+### What is a Transaction?
+
+A transaction is a group of database operations that must ALL succeed or ALL fail together.
+There is no partial success — either everything is committed or everything is rolled back.
+
+### Why do we need it?
+
+Without transactions, a failure midway through a multi-step operation corrupts your data:
+Deduct stock for Product A ✅
+Deduct stock for Product B ✅
+Save Order to DB ❌ (exception thrown here)
+Result: Stock deducted but no order created — data is now corrupted
+
+With `@Transactional`:
+Deduct stock for Product A ✅
+Deduct stock for Product B ✅
+Save Order to DB ❌ (exception thrown here)
+Result: Steps 1 and 2 are automatically ROLLED BACK — data stays clean
+
+### How @Transactional works:
+
+Method starts → Spring opens a transaction
+All DB operations → run inside that transaction (not committed yet)
+Method returns → Spring COMMITS (changes saved permanently)
+Exception thrown → Spring ROLLS BACK (all changes undone automatically)
+
+Spring handles all of this — you just annotate the method.
+
+### ACID Properties (interview must-know)
+
+Every database transaction guarantees four properties:
+
+| Property        | What it means                                           |
+| --------------- | ------------------------------------------------------- |
+| **Atomicity**   | All operations succeed or none do — no partial results  |
+| **Consistency** | Data always moves from one valid state to another       |
+| **Isolation**   | Concurrent transactions don't interfere with each other |
+| **Durability**  | Once committed, data survives crashes and restarts      |
+
+`@Transactional` gives you all four automatically.
+
+### Read vs Write transactions
+
+```java
+@Transactional                          // read-write (default)
+public OrderResponseDTO placeOrder() {}
+
+@Transactional(readOnly = true)         // read-only — slight performance gain
+public List<OrderResponseDTO> getAllOrders() {}
+```
+
+`readOnly = true` tells the DB it can skip write-locking, which improves performance
+for queries that don't modify data. Good practice to add on all GET methods.
+
+### Why we validate ALL stock before deducting ANY
+
+```java
+// Step 1 — validate everything first
+for (item : items) {
+    if (product.stock < item.quantity) throw exception;
+}
+
+// Step 2 — only then deduct stock
+for (item : items) {
+    product.stock -= item.quantity;
+}
+```
+
+If we validated and deducted in the same loop, a failure on item 3
+would roll back items 1 and 2 anyway (thanks to @Transactional),
+but it's cleaner and more readable to separate validation from mutation.
+Also makes it easier to return a single clear error message listing ALL
+insufficient products rather than stopping at the first one.
+
+### Price Snapshotting
+
+```java
+private Double priceAtPurchase;   // stored on OrderItem, not Product
+```
+
+Why not just reference `product.getPrice()` later?
+Because product prices change over time.
+If iPhone was ₹79,999 when ordered but ₹74,999 now,
+the order history must show what the customer actually paid.
+Snapshotting the price at the time of purchase is standard practice
+in any e-commerce or inventory system.
+
+### CascadeType.ALL
+
+```java
+@OneToMany(mappedBy = "order", cascade = CascadeType.ALL)
+private List<OrderItem> items;
+```
+
+Means any operation on Order automatically cascades to its OrderItems:
+
+- Save Order → saves all OrderItems
+- Delete Order → deletes all OrderItems
+
+Without cascade, you'd have to manually save/delete each item.
+
+### mappedBy — the most misunderstood JPA concept
+
+```java
+// Order side (inverse side — does NOT own the FK)
+@OneToMany(mappedBy = "order")
+private List<OrderItem> items;
+
+// OrderItem side (owning side — HOLDS the FK column)
+@ManyToOne
+@JoinColumn(name = "order_id")
+private Order order;
+```
+
+The side with `mappedBy` = inverse side = no FK column in its table
+The side with `@JoinColumn` = owning side = has the FK column in its table
+The FK (`order_id`) lives in the `order_items` table, not in `orders`.
+
+### @Enumerated(EnumType.STRING)
+
+```java
+@Enumerated(EnumType.STRING)    // stores "PENDING", "CANCELLED" in DB
+private OrderStatus status;
+```
+
+Never use the default `EnumType.ORDINAL` (stores 0, 1, 2...).
+If you add a new enum value in the middle, all existing data shifts and breaks.
+STRING is always safe — the stored value is human-readable and order-independent.
+
+### PATCH vs PUT for cancel endpoint
+
+PUT /api/orders/{id} → full update (replace entire resource)
+PATCH /api/orders/{id}/cancel → partial update (change only status field)
+
+Cancellation only changes the status field — not the entire order.
+PATCH is the semantically correct HTTP method for partial updates.
